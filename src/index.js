@@ -32,76 +32,91 @@ app.post("/send", async (req, res) => {
 
 // ── Inbound: Green API pushes webhooks here ───────────────────────────────────
 app.post("/webhook", async (req, res) => {
-  // Always ACK immediately — Green API expects a 200 within 180s
-  // and will retry otherwise
   res.sendStatus(200);
+  console.log("[webhook] received body:", JSON.stringify(req.body));
 
   const body = req.body;
 
   try {
-    // Validate webhook token if configured
     if (config.WEBHOOK_TOKEN) {
-  const token = (req.headers["authorization"] || req.query.token || "")
-    .replace("Bearer ", "");
-  if (token !== config.WEBHOOK_TOKEN) {
-    console.warn("[webhook] Rejected: invalid token");
-    return;
-  }
-}
+      const token = (req.headers["authorization"] || req.query.token || "")
+        .replace("Bearer ", "");
+      if (token !== config.WEBHOOK_TOKEN) {
+        console.warn("[webhook] Rejected: invalid token");
+        return;
+      }
+    }
 
-    // We only care about incoming messages
-    if (body.typeWebhook !== "incomingMessageReceived") return;
+    console.log("[webhook] typeWebhook:", body.typeWebhook);
+    if (body.typeWebhook !== "incomingMessageReceived") {
+      console.log("[webhook] ignoring non-incoming webhook type:", body.typeWebhook);
+      return;
+    }
 
     const { senderData, messageData } = body;
-    if (!senderData || !messageData) return;
+    console.log("[webhook] senderData:", JSON.stringify(senderData));
+    console.log("[webhook] messageData:", JSON.stringify(messageData));
 
-    const chatId = senderData.chatId; // e.g. "120363...@g.us" for groups
-    const sender = senderData.sender; // individual sender JID
+    const chatId = senderData.chatId;
+    const sender = senderData.sender;
     const isGroup = chatId.endsWith("@g.us");
 
-    // Scope filter
-    if (isGroup && !config.HANDLE_GROUP_MESSAGES) return;
-    if (!isGroup && !config.HANDLE_DM_MESSAGES) return;
+    console.log("[webhook] chatId:", chatId, "isGroup:", isGroup);
+    console.log("[webhook] ALLOWED_GROUP_IDS:", config.ALLOWED_GROUP_IDS);
 
-    // Group filter
+    if (isGroup && !config.HANDLE_GROUP_MESSAGES) {
+      console.log("[webhook] dropping: group messages disabled");
+      return;
+    }
+    if (!isGroup && !config.HANDLE_DM_MESSAGES) {
+      console.log("[webhook] dropping: DM messages disabled");
+      return;
+    }
+
     if (
       isGroup &&
       config.ALLOWED_GROUP_IDS.length > 0 &&
       !config.ALLOWED_GROUP_IDS.includes(chatId)
     ) {
+      console.log("[webhook] dropping: chatId not in allowed list");
       return;
     }
 
     const text = extractMessageText(messageData);
-    if (!text) return;
+    console.log("[webhook] extracted text:", text);
 
-    // Trigger check for group messages
-    if (isGroup && !shouldBotRespond(text, config)) return;
+    if (!text) {
+      console.log("[webhook] dropping: no text extracted");
+      return;
+    }
 
-    // Clean @mentions from the text before forwarding to Rasa
+    if (isGroup && !shouldBotRespond(text, config)) {
+      console.log("[webhook] dropping: shouldBotRespond returned false");
+      return;
+    }
+
     const cleanText = text
       .replace(new RegExp(`@${config.BOT_PHONE_NUMBER}`, "g"), "")
       .replace(/@\d+/g, "")
       .trim() || text;
 
-    console.log(`[webhook] ${isGroup ? "group" : "dm"} | sender=${sender} | text="${cleanText}"`);
+    console.log("[webhook] forwarding to rasa, sender:", sender, "text:", cleanText);
 
-    // Forward to Rasa
     const rasaReplies = await sendToRasa(sender, cleanText);
+    console.log("[webhook] rasa replies:", JSON.stringify(rasaReplies));
 
     if (!rasaReplies || rasaReplies.length === 0) {
-      console.log("[rasa] No reply");
+      console.log("[rasa] No reply returned");
       return;
     }
 
-    // Send each reply back via Green API
     for (const reply of rasaReplies) {
       await dispatchReply(chatId, reply);
-      // Small delay to avoid flooding
       await new Promise((r) => setTimeout(r, 400));
     }
   } catch (err) {
     console.error("[webhook] Handler error:", err.message);
+    console.error("[webhook] Stack:", err.stack);
   }
 });
 
