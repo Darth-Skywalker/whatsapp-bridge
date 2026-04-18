@@ -100,9 +100,9 @@ app.post("/webhook", async (req, res) => {
       .replace(/@\d+/g, "")
       .trim() || text;
 
-    console.log("[webhook] forwarding to rasa, sender:", sender, "text:", cleanText);
+    console.log("[webhook] forwarding to rasa, chatId:", chatId, "sender:", sender, "text:", cleanText);
 
-    const rasaReplies = await sendToRasa(sender, cleanText);
+    const rasaReplies = await sendToRasa(chatId, sender, cleanText);
     console.log("[webhook] rasa replies:", JSON.stringify(rasaReplies));
 
     if (!rasaReplies || rasaReplies.length === 0) {
@@ -121,10 +121,14 @@ app.post("/webhook", async (req, res) => {
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-async function sendToRasa(sender, message) {
+async function sendToRasa(chatId, sender, textMessage) {
   const resp = await axios.post(
     config.RASA_WEBHOOK_URL,
-    { sender, message },
+    {
+      metadata: { group_id: chatId },
+      sender,
+      message: textMessage,
+    },
     { timeout: 10_000 }
   );
   return resp.data;
