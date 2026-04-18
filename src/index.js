@@ -40,6 +40,8 @@ app.post("/webhook", async (req, res) => {
 
   try {
     // Validate webhook token if configured
+    console.log("[webhook] headers:", JSON.stringify(req.headers));
+    console.log("[webhook] WEBHOOK_TOKEN value:", config.WEBHOOK_TOKEN);
     if (config.WEBHOOK_TOKEN) {
       const token = req.headers["authorization"] || req.query.token;
       if (token !== config.WEBHOOK_TOKEN) {
