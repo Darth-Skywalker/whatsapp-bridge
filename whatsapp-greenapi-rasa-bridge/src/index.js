@@ -109,7 +109,7 @@ async function sendToRasa(sender, message) {
   const resp = await axios.post(
     config.RASA_WEBHOOK_URL,
     { sender, message },
-    { timeout: 10_000 }
+    { timeout: 30_000 }
   );
   return resp.data;
 }
