@@ -129,7 +129,7 @@ async function sendToRasa(chatId, sender, textMessage) {
       sender,
       message: textMessage,
     },
-    { timeout: 30_000 }
+    { timeout: 60_000 }
   );
   return resp.data;
 }
